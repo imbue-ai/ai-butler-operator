@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PhoneBrowserUse</title>
+  <link rel="stylesheet" href="viewer.css" />
+</head>
+<body>
+  <!-- Screen 1: Instructions -->
+  <div id="screen-instructions" class="screen active">
+    <div class="center-content">
+      <h1>PhoneBrowserUse</h1>
+      <p class="subtitle">Browse the internet with a phone call</p>
+
+      <div class="code-card">
+        <p class="label">Your code:</p>
+        <p id="session-code" class="code">------</p>
+      </div>
+
+      <div class="phone-card">
+        <p class="label">Call this number:</p>
+        <p id="phone-number" class="phone">Loading...</p>
+      </div>
+
+      <div class="steps">
+        <h2>How it works:</h2>
+        <ol>
+          <li>Call the phone number above</li>
+          <li>When asked, read the 6-digit code on your screen</li>
+          <li>Tell the voice assistant what you'd like to browse</li>
+          <li>Watch the browser on this screen as it works for you</li>
+        </ol>
+      </div>
+
+      <div id="connection-status" class="status waiting">
+        Waiting for your call...
+      </div>
+    </div>
+  </div>
+
+  <!-- Screen 2: Live View -->
+  <div id="screen-live" class="screen">
+    <div class="live-container">
+      <div class="live-header">
+        <span class="live-indicator"></span>
+        <span>Live — Your browser session is active</span>
+      </div>
+      <img id="screenshot" alt="Browser view" />
+    </div>
+  </div>
+
+  <!-- Screen 3: Session Ended -->
+  <div id="screen-ended" class="screen">
+    <div class="center-content">
+      <h1>Session Ended</h1>
+      <p class="subtitle">Your browsing session has finished.</p>
+      <p>Thank you for using PhoneBrowserUse!</p>
+      <button id="btn-new-session" class="btn-primary">Start New Session</button>
+    </div>
+  </div>
+
+  <div id="error-banner" class="error-banner hidden">
+    <span id="error-text"></span>
+  </div>
+
+  <script src="viewer.js"></script>
+</body>
+</html>
