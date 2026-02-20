@@ -15,11 +15,17 @@ btnStart.addEventListener("click", async () => {
 
     const session = await createSession(currentUrl);
 
-    // Open the viewer in a new tab
-    const viewerUrl = chrome.runtime.getURL(
-      `viewer.html?code=${session.code}&phone=${encodeURIComponent(session.phone_number)}`
-    );
-    await chrome.tabs.create({ url: viewerUrl });
+    // Inject content script into active tab and open overlay
+    const tabId = tab!.id!;
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["content.js"],
+    });
+    await chrome.tabs.sendMessage(tabId, {
+      action: "open_overlay",
+      code: session.code,
+      phone: session.phone_number,
+    });
 
     // Close the popup
     window.close();

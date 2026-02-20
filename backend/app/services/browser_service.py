@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import logging
 
@@ -18,6 +19,8 @@ class BrowserService:
         self._session: BrowserSession | None = None
         self._llm = ChatBrowserUse(model="bu-2-0")
         self._anthropic = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        self._agent_task: asyncio.Task | None = None
+        self._stopped = False
 
     async def start_browser(self, url: str = "https://www.google.com") -> None:
         self._session = BrowserSession(headless=True, keep_alive=True)
@@ -30,6 +33,8 @@ class BrowserService:
     async def execute_action(self, instruction: str) -> str:
         """Run a browser-use agent with a natural language instruction.
         Returns the agent's own description of what happened."""
+        if self._stopped:
+            raise RuntimeError("Browser service has been stopped")
         if not self._session:
             raise RuntimeError("Browser not started")
 
@@ -38,7 +43,17 @@ class BrowserService:
             llm=self._llm,
             browser_session=self._session,
         )
-        result = await agent.run()
+        self._agent_task = asyncio.create_task(agent.run())
+        try:
+            result = await self._agent_task
+        except asyncio.CancelledError:
+            logger.info("Agent task was cancelled (session ended)")
+            raise RuntimeError("Browser session ended")
+        finally:
+            self._agent_task = None
+
+        if self._stopped:
+            raise RuntimeError("Browser service has been stopped")
 
         # Extract the agent's final result text
         final = result.final_result()
@@ -104,8 +119,18 @@ class BrowserService:
 
         return response.content[0].text
 
+    async def stop(self) -> None:
+        """Signal the service to stop and cancel any running agent task."""
+        self._stopped = True
+        if self._agent_task and not self._agent_task.done():
+            self._agent_task.cancel()
+            logger.info("Cancelled running agent task")
+
     async def close(self) -> None:
+        await self.stop()
         if self._session:
-            await self._session.stop()
+            # Use kill() for force shutdown — skips storage state saving
+            # and other watchdog operations that fail during teardown
+            await self._session.kill()
             self._session = None
             logger.info("Browser closed")

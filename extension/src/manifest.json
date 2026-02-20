@@ -9,5 +9,11 @@
   "background": {
     "service_worker": "background.js"
   },
-  "permissions": ["activeTab"]
+  "permissions": ["activeTab", "scripting"],
+  "web_accessible_resources": [
+    {
+      "resources": ["viewer.html", "viewer.css", "viewer.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }

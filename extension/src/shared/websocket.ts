@@ -39,9 +39,13 @@ export class WebSocketManager {
       }
     };
 
-    this.ws.onclose = () => {
-      console.log("WebSocket closed");
+    this.ws.onclose = (event: CloseEvent) => {
+      console.log("WebSocket closed, code:", event.code);
       this.stopPing();
+      // Stop reconnecting if the session is invalid (4004) or ended normally (1000)
+      if (event.code === 4004 || event.code === 1000) {
+        this.shouldReconnect = false;
+      }
       if (this.shouldReconnect) {
         setTimeout(() => this.connect(), RECONNECT_DELAY_MS);
       }

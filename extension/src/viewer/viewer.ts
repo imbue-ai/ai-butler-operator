@@ -19,6 +19,19 @@ const errorText = document.getElementById("error-text")!;
 
 let wsManager: WebSocketManager | null = null;
 
+// Detect if running inside an iframe (overlay mode)
+if (window.parent !== window) {
+  document.body.classList.add("in-iframe");
+}
+
+// Close overlay button
+const btnCloseOverlay = document.getElementById("btn-close-overlay");
+if (btnCloseOverlay) {
+  btnCloseOverlay.addEventListener("click", () => {
+    window.parent.postMessage({ action: "pbu_close_overlay" }, "*");
+  });
+}
+
 function showScreen(name: keyof typeof screens): void {
   Object.values(screens).forEach((el) => el.classList.remove("active"));
   screens[name].classList.add("active");

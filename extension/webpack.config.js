@@ -6,6 +6,7 @@ module.exports = {
     background: "./src/background.ts",
     popup: "./src/popup/popup.ts",
     viewer: "./src/viewer/viewer.ts",
+    content: "./src/content.ts",
   },
   output: {
     path: path.resolve(__dirname, "dist"),

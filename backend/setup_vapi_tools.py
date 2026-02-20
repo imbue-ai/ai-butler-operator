@@ -97,7 +97,7 @@ TOOLS = [
 
 SYSTEM_PROMPT = """You are a friendly assistant helping elderly users browse the internet via phone.
 
-1. First, ask the user for their 6-digit code shown on their screen.
+1. First, ask the user for their 6-digit code shown on their screen. They can read it aloud or type it on their phone's keypad.
 2. Use the validate_code tool to verify it. Repeat the code back for confirmation.
 3. Once connected, listen to what they want to do and use the appropriate tool.
 4. After each action, speak the result clearly and slowly.
@@ -106,20 +106,56 @@ SYSTEM_PROMPT = """You are a friendly assistant helping elderly users browse the
 7. If they ask "what's on the screen", use describe_current_page."""
 
 
-def create_tools() -> list[str]:
+def get_existing_tools() -> dict[str, str]:
+    """Fetch all existing tools and return a mapping of function name -> tool id."""
+    resp = requests.get("https://api.vapi.ai/tool", headers=HEADERS)
+    if resp.status_code != 200:
+        print(f"  Warning: could not list existing tools: {resp.status_code}")
+        return {}
+    existing: dict[str, str] = {}
+    for tool in resp.json():
+        func = tool.get("function", {})
+        name = func.get("name")
+        if name:
+            existing[name] = tool["id"]
+    return existing
+
+
+def sync_tools() -> list[str]:
+    """Create or update tools so we don't accumulate duplicates."""
+    existing = get_existing_tools()
     tool_ids = []
     for tool_def in TOOLS:
-        resp = requests.post(
-            "https://api.vapi.ai/tool",
-            headers=HEADERS,
-            json=tool_def,
-        )
-        if resp.status_code == 201:
-            tool = resp.json()
-            tool_ids.append(tool["id"])
-            print(f"  Created tool: {tool_def['function']['name']} -> {tool['id']}")
+        name = tool_def["function"]["name"]
+        existing_id = existing.get(name)
+
+        if existing_id:
+            # Update the existing tool in place (PATCH rejects the "type" field)
+            patch_body = {k: v for k, v in tool_def.items() if k != "type"}
+            resp = requests.patch(
+                f"https://api.vapi.ai/tool/{existing_id}",
+                headers=HEADERS,
+                json=patch_body,
+            )
+            if resp.status_code == 200:
+                tool_ids.append(existing_id)
+                print(f"  Updated tool: {name} -> {existing_id}")
+            else:
+                print(f"  FAILED to update {name}: {resp.status_code} {resp.text}")
         else:
-            print(f"  FAILED to create {tool_def['function']['name']}: {resp.status_code} {resp.text}")
+            # Create a new tool
+            resp = requests.post(
+                "https://api.vapi.ai/tool",
+                headers=HEADERS,
+                json=tool_def,
+            )
+            if resp.status_code == 201:
+                tool = resp.json()
+                tool_ids.append(tool["id"])
+                print(f"  Created tool: {name} -> {tool['id']}")
+            else:
+                print(f"  FAILED to create {name}: {resp.status_code} {resp.text}")
+
     return tool_ids
 
 
@@ -134,6 +170,7 @@ def update_assistant(tool_ids: list[str]) -> None:
         f"https://api.vapi.ai/assistant/{VAPI_ASSISTANT_ID}",
         headers=HEADERS,
         json={
+            "serverUrl": WEBHOOK_URL,
             "model": {
                 "provider": "openai",
                 "model": "gpt-4.1",
@@ -145,7 +182,12 @@ def update_assistant(tool_ids: list[str]) -> None:
                     }
                 ],
             },
-            "firstMessage": "Hello! Welcome to Phone Browser Use. Could you please read me the 6-digit code shown on your screen?",
+            "firstMessage": "Hello! Welcome to Phone Browser Use. Please enter your 6-digit code on your phone's keypad, or read it aloud to me.",
+            "keypadInputPlan": {
+                "enabled": True,
+                "timeoutSeconds": 0,
+                "delimiters": ["#"],
+            },
         },
     )
     if resp.status_code == 200:
@@ -157,11 +199,11 @@ def update_assistant(tool_ids: list[str]) -> None:
 
 if __name__ == "__main__":
     print(f"Webhook URL: {WEBHOOK_URL}\n")
-    print("Creating tools...")
-    tool_ids = create_tools()
+    print("Syncing tools...")
+    tool_ids = sync_tools()
 
     if tool_ids:
-        print(f"\n{len(tool_ids)} tools created.")
+        print(f"\n{len(tool_ids)} tools ready.")
         update_assistant(tool_ids)
     else:
         print("\nNo tools were created.")

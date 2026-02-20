@@ -32,7 +32,7 @@ async def vapi_webhook(request: Request):
     elif msg_type == "end-of-call-report":
         return await _handle_end_of_call(message)
 
-    # Return empty for unhandled message types
+    # Ignore noisy Vapi status messages
     return {"results": []}
 
 
@@ -105,6 +105,9 @@ async def _validate_code(args: dict, message: dict) -> str:
         session.screenshot_task = asyncio.create_task(
             stream_screenshots(browser_svc, session.websocket, code)
         )
+        logger.info("Screenshot streaming task created for session %s", code)
+    else:
+        logger.warning("No WebSocket connected for session %s, skipping screenshots", code)
 
     return (
         "Code verified successfully! I can now see a browser with Google open. "
@@ -170,15 +173,22 @@ async def _go_to_website(args: dict) -> str:
 
 async def _handle_end_of_call(message: dict) -> dict:
     call_id = message.get("call", {}).get("id", "")
+    logger.info("End-of-call received for call_id: %s", call_id)
 
     # Find session by call ID and clean up
+    found = False
     for code, session in list(session_manager._sessions.items()):
+        logger.info("  Checking session %s with call_id %s", code, session.vapi_call_id)
         if session.vapi_call_id == call_id:
+            found = True
             if session.websocket:
                 await send_session_ended(session.websocket)
             await session_manager.end_session(code)
             logger.info("Call ended, session %s cleaned up", code)
             break
+
+    if not found:
+        logger.warning("No session found for call_id: %s", call_id)
 
     return {}
 

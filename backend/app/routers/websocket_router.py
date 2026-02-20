@@ -17,11 +17,10 @@ session_manager = None
 @router.websocket("/ws/{code}")
 async def websocket_endpoint(websocket: WebSocket, code: str):
     session = session_manager.get_session(code) if session_manager else None
+    await websocket.accept()
     if session is None:
         await websocket.close(4004, "Invalid session code")
         return
-
-    await websocket.accept()
     session.websocket = websocket
     logger.info("WebSocket connected for session %s", code)
 
