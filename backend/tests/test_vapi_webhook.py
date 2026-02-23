@@ -1,14 +1,19 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
+import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app, session_manager
+from app.routers import extension_api, vapi_webhook, websocket_router
 
 
 @pytest.fixture(autouse=True)
-def _clean_sessions():
-    """Ensure clean state between tests."""
+def _inject_and_clean():
+    """Inject session_manager into routers and ensure clean state between tests."""
+    extension_api.session_manager = session_manager
+    websocket_router.session_manager = session_manager
+    vapi_webhook.session_manager = session_manager
     session_manager._sessions.clear()
     session_manager._code_generator._active_codes.clear()
     yield
@@ -16,7 +21,7 @@ def _clean_sessions():
     session_manager._code_generator._active_codes.clear()
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def client():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
@@ -78,13 +83,7 @@ async def test_validate_code_success(client: AsyncClient):
         }
     }
 
-    with patch(
-        "app.routers.vapi_webhook.BrowserService"
-    ) as MockBrowserService:
-        mock_instance = AsyncMock()
-        MockBrowserService.return_value = mock_instance
-
-        resp = await client.post("/api/vapi/webhook", json=webhook_payload)
+    resp = await client.post("/api/vapi/webhook", json=webhook_payload)
 
     assert resp.status_code == 200
     data = resp.json()

@@ -1,16 +1,12 @@
 from __future__ import annotations
 
-import asyncio
+import json
 import logging
 
 from fastapi import APIRouter, Request
 
-from app.services.browser_service import BrowserService
-from app.services.screenshot_streamer import (
-    send_session_ended,
-    send_status,
-    stream_screenshots,
-)
+from app.models.ws_messages import session_ended_message, status_message
+from app.services.computer_use_agent import ComputerUseAgent
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +27,6 @@ async def vapi_webhook(request: Request):
     elif msg_type == "end-of-call-report":
         return await _handle_end_of_call(message)
 
-    # Ignore noisy Vapi status messages
     return {"results": []}
 
 
@@ -45,16 +40,17 @@ async def _handle_tool_calls(message: dict) -> dict:
         name = function.get("name", "")
         args = function.get("arguments", {})
 
-        # Parse arguments if they come as a string
         if isinstance(args, str):
-            import json
             try:
                 args = json.loads(args)
             except json.JSONDecodeError:
                 args = {}
 
+        logger.info("VAPI tool call: %s(%s)", name, json.dumps(args, default=str))
+
         try:
             result = await _dispatch_tool(name, args, message)
+            logger.info("VAPI tool result [%s]: %s", name, result[:200] if result else "(empty)")
             results.append({
                 "toolCallId": tool_call_id,
                 "result": result,
@@ -94,28 +90,22 @@ async def _validate_code(args: dict, message: dict) -> str:
     if session is None:
         return "That code is not valid or has already been used. Please ask the user to check their screen and try again."
 
-    # Start browser on the session's start URL, with user's cookies if provided.
-    # Each session code gets a persistent browser profile so logins survive.
-    browser_svc = BrowserService()
-    await browser_svc.start_browser(
-        session.start_url,
-        cookies=session.cookies,
-        profile_id=code,
-    )
-    session.browser_service = browser_svc
-
-    # Start screenshot streaming if WebSocket is connected
+    # Send active status to extension via WebSocket
     if session.websocket:
-        await send_status(session.websocket, "active")
-        session.screenshot_task = asyncio.create_task(
-            stream_screenshots(browser_svc, session.websocket, code)
+        await session.websocket.send_text(
+            json.dumps(status_message("active"))
         )
-        logger.info("Screenshot streaming task created for session %s", code)
+
+    # Create a ComputerUseAgent for this session
+    if session.websocket:
+        agent = ComputerUseAgent(session.websocket, code)
+        session.computer_use_agent = agent
+        logger.info("ComputerUseAgent created for session %s", code)
     else:
-        logger.warning("No WebSocket connected for session %s, skipping screenshots", code)
+        logger.warning("No WebSocket connected for session %s", code)
 
     return (
-        "Code verified successfully! I can now see a browser with Google open. "
+        "Code verified successfully! I can now see the user's browser. "
         "What would you like me to help you find or do on the internet?"
     )
 
@@ -126,29 +116,74 @@ async def _execute_browser_action(args: dict, call_id: str) -> str:
         return "I didn't catch what you'd like me to do. Could you say that again?"
 
     session = session_manager.get_session_by_call_id(call_id)
-    if not session or not session.browser_service:
+    if not session or not session.computer_use_agent:
         return "I'm sorry, but I don't have an active browser session."
+
+    if not session.websocket:
+        return "The browser extension is disconnected. Please check the extension."
 
     session.touch()
 
+    # Ensure agent has current websocket reference
+    session.computer_use_agent._ws = session.websocket
+
     try:
-        description = await session.browser_service.execute_action(instruction)
-        return description
+        result = await session.computer_use_agent.execute(instruction)
+        return result
     except Exception as e:
         logger.exception("Browser action failed: %s", instruction)
-        return f"I had trouble doing that. Let me describe what I can see instead."
+        return "I had trouble doing that. Could you try asking in a different way?"
 
 
 async def _describe_current_page(args: dict, call_id: str) -> str:
     session = session_manager.get_session_by_call_id(call_id)
-    if not session or not session.browser_service:
+    if not session or not session.computer_use_agent:
         return "I don't have an active browser session right now."
 
+    if not session.websocket:
+        return "The browser extension is disconnected."
+
     session.touch()
+    session.computer_use_agent._ws = session.websocket
 
     try:
-        return await session.browser_service.describe_page()
-    except Exception as e:
+        # Take a screenshot and describe it using Claude vision
+        import anthropic
+        from app.config import settings
+
+        b64_data, _, _, _ = await session.computer_use_agent.request_screenshot()
+
+        client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        response = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=200,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/jpeg",
+                                "data": b64_data,
+                            },
+                        },
+                        {
+                            "type": "text",
+                            "text": (
+                                "Describe this web page in 2-3 simple sentences "
+                                "for an elderly person who is listening over the phone. "
+                                "Focus on what's visible and any key information. "
+                                "Use plain, easy-to-understand language."
+                            ),
+                        },
+                    ],
+                }
+            ],
+        )
+        return response.content[0].text
+    except Exception:
         logger.exception("Page description failed")
         return "I'm having trouble seeing the page right now."
 
@@ -158,36 +193,76 @@ async def _go_to_website(args: dict, call_id: str) -> str:
     if not url:
         return "I didn't catch the website address. Could you say it again?"
 
-    # Add https:// if no scheme provided
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
 
     session = session_manager.get_session_by_call_id(call_id)
-    if not session or not session.browser_service:
+    if not session or not session.computer_use_agent:
         return "I don't have an active browser session right now."
 
+    if not session.websocket:
+        return "The browser extension is disconnected."
+
     session.touch()
+    session.computer_use_agent._ws = session.websocket
 
     try:
-        description = await session.browser_service.navigate_to(url)
-        return description
+        # Navigate the tab directly via chrome.tabs.update
+        success = await session.computer_use_agent.navigate(url)
+        if not success:
+            return "I had trouble navigating to that website."
+
+        # Describe the page after navigation
+        import anthropic
+        from app.config import settings
+
+        b64_data, _, _, _ = await session.computer_use_agent.request_screenshot()
+        client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        response = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=200,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/jpeg",
+                                "data": b64_data,
+                            },
+                        },
+                        {
+                            "type": "text",
+                            "text": (
+                                "Describe this web page in 2-3 simple sentences "
+                                "for someone listening over the phone. "
+                                "Focus on what's visible and any key information."
+                            ),
+                        },
+                    ],
+                }
+            ],
+        )
+        return response.content[0].text
     except Exception as e:
         logger.exception("Navigation failed: %s", url)
-        return f"I had trouble going to that website. Could you check the address?"
+        return "I had trouble going to that website. Could you check the address?"
 
 
 async def _handle_end_of_call(message: dict) -> dict:
     call_id = message.get("call", {}).get("id", "")
     logger.info("End-of-call received for call_id: %s", call_id)
 
-    # Find session by call ID and clean up
     found = False
     for code, session in list(session_manager._sessions.items()):
-        logger.info("  Checking session %s with call_id %s", code, session.vapi_call_id)
         if session.vapi_call_id == call_id:
             found = True
             if session.websocket:
-                await send_session_ended(session.websocket)
+                await session.websocket.send_text(
+                    json.dumps(session_ended_message())
+                )
             await session_manager.end_session(code)
             logger.info("Call ended, session %s cleaned up", code)
             break

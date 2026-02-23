@@ -2,6 +2,19 @@ import { createSession } from "../shared/api";
 
 const btnStart = document.getElementById("btn-start") as HTMLButtonElement;
 const statusEl = document.getElementById("status")!;
+const screenStart = document.getElementById("screen-start")!;
+const screenSession = document.getElementById("screen-session")!;
+const codeEl = document.getElementById("session-code")!;
+const phoneEl = document.getElementById("session-phone")!;
+const sessionStatusEl = document.getElementById("session-status")!;
+
+function formatPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("1")) {
+    return `+1 (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
+  }
+  return raw;
+}
 
 btnStart.addEventListener("click", async () => {
   btnStart.disabled = true;
@@ -9,39 +22,27 @@ btnStart.addEventListener("click", async () => {
   statusEl.className = "status";
 
   try {
-    // Get the current tab's URL
+    // Get the current tab
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    const currentUrl = tab?.url || undefined;
+    if (!tab?.id) {
+      throw new Error("No active tab found");
+    }
 
-    // Gather all browser cookies to forward to the server
-    const rawCookies = await chrome.cookies.getAll({});
-    const cookies = rawCookies.map((c) => ({
-      name: c.name,
-      value: c.value,
-      domain: c.domain,
-      path: c.path,
-      secure: c.secure,
-      httpOnly: c.httpOnly,
-      sameSite: c.sameSite === "no_restriction" ? "None" : c.sameSite === "lax" ? "Lax" : "Strict",
-      expires: c.expirationDate ?? -1,
-    }));
+    const session = await createSession();
 
-    const session = await createSession(currentUrl, cookies);
-
-    // Inject content script into active tab and open overlay
-    const tabId = tab!.id!;
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      files: ["content.js"],
-    });
-    await chrome.tabs.sendMessage(tabId, {
-      action: "open_overlay",
+    // Tell background to connect WebSocket for this session + tab
+    chrome.runtime.sendMessage({
+      action: "connect_session",
       code: session.code,
-      phone: session.phone_number,
+      tabId: tab.id,
     });
 
-    // Close the popup
-    window.close();
+    // Show session info
+    screenStart.classList.add("hidden");
+    screenSession.classList.remove("hidden");
+    codeEl.textContent = session.code;
+    phoneEl.textContent = formatPhone(session.phone_number);
+    statusEl.classList.add("hidden");
   } catch (err) {
     console.error("Failed to create session", err);
     statusEl.textContent = "Could not connect to server. Is it running?";

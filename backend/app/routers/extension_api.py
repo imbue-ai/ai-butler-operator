@@ -1,8 +1,7 @@
 from fastapi import APIRouter, HTTPException
 
 from app.config import settings
-from app.models.api_models import SessionCreateRequest, SessionCreateResponse, SessionStatusResponse
-from app.models.session import SessionState
+from app.models.api_models import SessionCreateResponse, SessionStatusResponse
 
 router = APIRouter(prefix="/api/session", tags=["session"])
 
@@ -11,14 +10,11 @@ session_manager = None
 
 
 @router.post("/create", response_model=SessionCreateResponse)
-async def create_session(request: SessionCreateRequest = SessionCreateRequest()):
+async def create_session():
     session = session_manager.create_session()
-    session.start_url = request.url
-    session.cookies = [c.model_dump() for c in request.cookies]
     return SessionCreateResponse(
         code=session.code,
         phone_number=settings.vapi_phone_number,
-        url=session.start_url,
     )
 
 

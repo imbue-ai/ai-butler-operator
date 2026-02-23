@@ -1,28 +1,11 @@
 import { SERVER_URL } from "./constants";
 import type { SessionCreateResponse, SessionStatusResponse } from "./types";
 
-export interface CookieData {
-  name: string;
-  value: string;
-  domain: string;
-  path: string;
-  secure: boolean;
-  httpOnly: boolean;
-  sameSite: string;
-  expires: number;
-}
-
-export async function createSession(
-  url?: string,
-  cookies?: CookieData[]
-): Promise<SessionCreateResponse> {
+export async function createSession(): Promise<SessionCreateResponse> {
   const res = await fetch(`${SERVER_URL}/api/session/create`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      url: url ?? "https://www.google.com",
-      cookies: cookies ?? [],
-    }),
+    body: JSON.stringify({}),
   });
   if (!res.ok) {
     throw new Error(`Failed to create session: ${res.status}`);

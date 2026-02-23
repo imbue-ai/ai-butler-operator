@@ -5,7 +5,6 @@ module.exports = {
   entry: {
     background: "./src/background.ts",
     popup: "./src/popup/popup.ts",
-    viewer: "./src/viewer/viewer.ts",
     content: "./src/content.ts",
   },
   output: {
@@ -34,8 +33,6 @@ module.exports = {
         { from: "src/manifest.json", to: "manifest.json" },
         { from: "src/popup/popup.html", to: "popup.html" },
         { from: "src/popup/popup.css", to: "popup.css" },
-        { from: "src/viewer/viewer.html", to: "viewer.html" },
-        { from: "src/viewer/viewer.css", to: "viewer.css" },
       ],
     }),
   ],

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "PhoneBrowserUse",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Browse the web with a phone call.",
   "action": {
     "default_popup": "popup.html"
@@ -9,12 +9,6 @@
   "background": {
     "service_worker": "background.js"
   },
-  "permissions": ["activeTab", "scripting", "cookies"],
-  "host_permissions": ["<all_urls>"],
-  "web_accessible_resources": [
-    {
-      "resources": ["viewer.html", "viewer.css", "viewer.js"],
-      "matches": ["<all_urls>"]
-    }
-  ]
+  "permissions": ["activeTab", "scripting", "tabs"],
+  "host_permissions": ["<all_urls>"]
 }

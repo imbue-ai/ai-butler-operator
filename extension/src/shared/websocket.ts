@@ -1,19 +1,23 @@
 import { WS_URL, RECONNECT_DELAY_MS, PING_INTERVAL_MS } from "./constants";
-import type { WsMessage } from "./types";
+import type { ServerMessage, ExtensionMessage } from "./types";
 
-export type MessageHandler = (msg: WsMessage) => void;
+export type ServerMessageHandler = (msg: ServerMessage) => void;
 
+/**
+ * WebSocket manager adapted for service worker context.
+ * Uses self.setInterval (works in both window and service worker).
+ */
 export class WebSocketManager {
   private ws: WebSocket | null = null;
-  private pingInterval: number | null = null;
+  private pingInterval: ReturnType<typeof setInterval> | null = null;
   private code: string;
-  private onMessage: MessageHandler;
+  private onMessage: ServerMessageHandler;
   private onDisconnect: () => void;
   private shouldReconnect = true;
 
   constructor(
     code: string,
-    onMessage: MessageHandler,
+    onMessage: ServerMessageHandler,
     onDisconnect: () => void
   ) {
     this.code = code;
@@ -32,7 +36,7 @@ export class WebSocketManager {
 
     this.ws.onmessage = (event: MessageEvent) => {
       try {
-        const msg: WsMessage = JSON.parse(event.data);
+        const msg: ServerMessage = JSON.parse(event.data);
         this.onMessage(msg);
       } catch (e) {
         console.error("Failed to parse WS message", e);
@@ -42,7 +46,6 @@ export class WebSocketManager {
     this.ws.onclose = (event: CloseEvent) => {
       console.log("WebSocket closed, code:", event.code);
       this.stopPing();
-      // Stop reconnecting if the session is invalid (4004) or ended normally (1000)
       if (event.code === 4004 || event.code === 1000) {
         this.shouldReconnect = false;
       }
@@ -57,6 +60,14 @@ export class WebSocketManager {
     };
   }
 
+  send(msg: ExtensionMessage): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(msg));
+    } else {
+      console.warn("WebSocket not open, cannot send message");
+    }
+  }
+
   close(): void {
     this.shouldReconnect = false;
     this.stopPing();
@@ -66,8 +77,12 @@ export class WebSocketManager {
     }
   }
 
+  get isConnected(): boolean {
+    return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
+  }
+
   private startPing(): void {
-    this.pingInterval = window.setInterval(() => {
+    this.pingInterval = setInterval(() => {
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
         this.ws.send(JSON.stringify({ type: "ping" }));
       }
