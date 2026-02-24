@@ -183,6 +183,7 @@ def update_assistant(tool_ids: list[str]) -> None:
                 ],
             },
             "firstMessage": "Hello! Welcome to Phone Browser Use. Please enter your 6-digit code on your phone's keypad, or read it aloud to me.",
+            "silenceTimeoutSeconds": 600,
             "keypadInputPlan": {
                 "enabled": True,
                 "timeoutSeconds": 0,

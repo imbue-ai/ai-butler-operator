@@ -12,7 +12,7 @@ const screens = {
 const sessionCodeEl = document.getElementById("session-code")!;
 const phoneNumberEl = document.getElementById("phone-number")!;
 const connectionStatusEl = document.getElementById("connection-status")!;
-const screenshotEl = document.getElementById("screenshot") as HTMLImageElement;
+const liveViewIframe = document.getElementById("live-view-iframe") as HTMLIFrameElement;
 const btnNewSession = document.getElementById("btn-new-session")!;
 const errorBanner = document.getElementById("error-banner")!;
 const errorText = document.getElementById("error-text")!;
@@ -51,14 +51,23 @@ function formatPhoneNumber(phone: string): string {
   return phone;
 }
 
+// Listen for Browserbase disconnect events from the iframe
+window.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "browserbase-disconnected") {
+    showScreen("ended");
+    if (wsManager) {
+      wsManager.close();
+      wsManager = null;
+    }
+  }
+});
+
 function handleWsMessage(msg: WsMessage): void {
   switch (msg.type) {
-    case "screenshot":
-      if (msg.data) {
-        screenshotEl.src = `data:image/jpeg;base64,${msg.data}`;
-        if (!screens.live.classList.contains("active")) {
-          showScreen("live");
-        }
+    case "live_view":
+      if (msg.live_view_url) {
+        liveViewIframe.src = msg.live_view_url;
+        showScreen("live");
       }
       break;
 
@@ -110,6 +119,9 @@ btnNewSession.addEventListener("click", async () => {
     wsManager.close();
     wsManager = null;
   }
+
+  // Clear any previous live view
+  liveViewIframe.src = "";
 
   try {
     const session = await createSession();

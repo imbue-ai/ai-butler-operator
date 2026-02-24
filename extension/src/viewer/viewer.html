@@ -49,7 +49,11 @@
         <span class="live-indicator"></span>
         <span>Live — Your browser session is active</span>
       </div>
-      <img id="screenshot" alt="Browser view" />
+      <iframe
+        id="live-view-iframe"
+        sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+        allow="clipboard-read; clipboard-write"
+      ></iframe>
     </div>
   </div>
 

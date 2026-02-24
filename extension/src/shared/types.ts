@@ -10,8 +10,9 @@ export interface SessionStatusResponse {
 }
 
 export interface WsMessage {
-  type: "screenshot" | "status" | "session_ended" | "pong";
+  type: "screenshot" | "status" | "session_ended" | "pong" | "live_view";
   data?: string;
   status?: string;
   detail?: string;
+  live_view_url?: string;
 }

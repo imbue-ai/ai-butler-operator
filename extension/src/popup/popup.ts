@@ -42,9 +42,16 @@ btnStart.addEventListener("click", async () => {
 
     // Close the popup
     window.close();
-  } catch (err) {
+  } catch (err: any) {
     console.error("Failed to create session", err);
-    statusEl.textContent = "Could not connect to server. Is it running?";
+    const message = err?.message || String(err);
+    if (message.includes("Failed to fetch") || message.includes("NetworkError")) {
+      statusEl.textContent = "Could not connect to server. Is it running?";
+    } else if (message.includes("Cannot access") || message.includes("restricted")) {
+      statusEl.textContent = "Cannot run on this page. Try on a regular website.";
+    } else {
+      statusEl.textContent = `Error: ${message}`;
+    }
     statusEl.className = "status error";
     btnStart.disabled = false;
   }

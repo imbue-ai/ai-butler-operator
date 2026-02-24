@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -33,8 +32,9 @@ class Session:
     # WebSocket connection for the extension
     websocket: Any = None
 
-    # Screenshot streaming task
-    screenshot_task: asyncio.Task | None = None
+    # Browserbase live view
+    live_view_url: str | None = None
+    browserbase_session_id: str | None = None
 
     def touch(self) -> None:
         self.last_activity = time.time()
